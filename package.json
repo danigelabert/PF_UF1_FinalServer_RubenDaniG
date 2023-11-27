@@ -2,5 +2,7 @@
   "name": "PF_UF1_FinalServer_RubenDaniG",
   "version": "1.0.0",
   "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
   }
 }
