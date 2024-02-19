@@ -1,7 +1,9 @@
 const express = require('express');
 const http = require('http');
+const mysql = require('mysql');
 const { Server } = require('socket.io');
-const fs = require("fs");
+const bodyParser = require('body-parser');
+const cors = require('cors');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -10,6 +12,19 @@ const io = new Server(httpServer, {
         origin: "http://localhost:4200",
     },
 });
+
+const db = mysql.createConnection({
+    host: 'localhost',
+    user: 'daniruben',
+    password: 'P@tata123',
+    database: 'pfdaniruben'
+});
+
+db.connect();
+
+
+app.use(cors());
+app.use(bodyParser.json());
 
 let counter;
 let counterActualizado;
@@ -36,7 +51,6 @@ function streamVideo(req, res, videoPath) {
             'Content-Length': chunksize,
             'Content-Type': 'video/mp4',
         };
-
         res.writeHead(206, head);
         file.pipe(res);
     } else {
@@ -107,6 +121,24 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         console.log('Cliente desconectado');
+    });
+});
+
+app.post('/login', (req, res) => {
+    const { username, password } = req.body;
+    const query = `SELECT * FROM usuarios WHERE username='${username}' AND password='${password}'`;
+
+    db.query(query, (err, result) => {
+        if (err) {
+            res.status(500).json({ error: 'Error en el servidor' });
+            return;
+        }
+
+        if (result.length > 0) {
+            res.status(200).json({ message: 'Login exitoso' });
+        } else {
+            res.status(401).json({ error: 'Credenciales inválidas' });
+        }
     });
 });
 
