@@ -14,6 +14,10 @@ const io = new Server(httpServer, {
         origin: "http://localhost:4200",
     },
 });
+let tokenKeeper = '';
+let userValid = false;
+let counter = 0;
+let counterActualizado = 0;
 
 const db = mysql.createConnection({
     host: 'localhost',
@@ -27,33 +31,22 @@ db.connect();
 app.use(cors());
 app.use(bodyParser.json());
 
-// Secreto para firmar y verificar JWT
 const JWT_Secret = 'P@tata123';
 
-// Middleware para verificar JWT
 const verifyToken = (req, res, next) => {
     const token = req.headers['authorization'];
-    if (token) {
-        jwt.verify(token.split(' ')[1], JWT_Secret, (err, decoded) => {
-            if (err) {
-                console.error("Error al verificar el token:", err);
-                req.user = null; // Marcar como usuario desconocido
-            } else {
-                req.user = decoded;
-            }
-            next();
-        });
-    } else {
-        // Si no hay token en la solicitud, continúa sin verificar
+    if (token === tokenKeeper) {
+        userValid = true;
         next();
+    } else {
+        userValid = false;
+        console.log('Token inválido');
     }
 };
 
-// Ruta para generar token de autenticación
 app.post('/login', (req, res) => {
     if (req.body) {
         const { username, password } = req.body;
-        const user = req.body
         const query = `SELECT * FROM usuarios WHERE username='${username}' AND password='${password}'`;
 
         db.query(query, (err, result) => {
@@ -71,65 +64,41 @@ app.post('/login', (req, res) => {
                     token: token,
                     premium: user.premium
                 });
-                console.log("JWT done")
+                console.log("JWT generado correctamente");
                 console.log("Premium:", user.premium);
+                tokenKeeper = token;
             } else {
                 res.status(403).send({
-                    errorMessage: 'Authorisation required!'
+                    errorMessage: 'Autorización requerida!'
                 });
             }
         });
     } else {
         res.status(403).send({
-            errorMessage: 'Please provide email and password'
+            errorMessage: 'Por favor, proporciona un usuario y contraseña'
         });
     }
 });
 
-// Rutas protegidas
-app.get('/videos/auron', verifyToken, (req, res) => {
-    // Acceso a los vídeos permitido
+app.get('/videos/auron', (req, res) => {
     const videoPath = 'videos/auron.mp4';
     streamVideo(req, res, videoPath);
 });
 
-app.get('/videos/premium', verifyToken, (req, res) => {
-    // Acceso a los vídeos permitido
+app.get('/videos/premium', (req, res) => {
     const videoPath = 'videos/premium.mp4';
     streamVideo(req, res, videoPath);
 });
 
-app.get('/videos/ibai', verifyToken, (req, res) => {
-    // Acceso a los vídeos permitido
+app.get('/videos/ibai', (req, res) => {
     const videoPath = 'videos/ibai.mp4';
     streamVideo(req, res, videoPath);
 });
 
-app.get('/videos/illo', verifyToken, (req, res) => {
-    // Acceso a los vídeos permitido
+app.get('/videos/illo', (req, res) => {
     const videoPath = 'videos/illoJuan.mp4';
     streamVideo(req, res, videoPath);
 });
-
-// app.get('/videos/auron', (req, res) => {
-//     const videoPath = 'videos/auron.mp4';
-//     streamVideo(req, res, videoPath);
-// });
-//
-// app.get('/videos/illo', (req, res) => {
-//     const videoPath = 'videos/illoJuan.mp4';
-//     streamVideo(req, res, videoPath);
-// });
-//
-// app.get('/videos/ibai', (req, res) => {
-//     const videoPath = 'videos/ibai.mp4';
-//     streamVideo(req, res, videoPath);
-// });
-//
-// app.get('/videos/premium', (req, res) => {
-//     const videoPath = 'videos/premium.mp4';
-//     streamVideo(req, res, videoPath);
-// });
 
 function streamVideo(req, res, videoPath) {
     const stat = fs.statSync(videoPath);
@@ -162,7 +131,6 @@ function streamVideo(req, res, videoPath) {
     }
 }
 
-
 io.on('connection', (socket) => {
     console.log('Nuevo cliente conectado: ' + socket.id);
 
@@ -184,22 +152,26 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('videoRequest', (videoPath) => {
-        console.log("Solicitud de video recibida: " + videoPath);
-        const videoStream = fs.createReadStream( videoPath, { highWaterMark: 1024 * 1024 });
+    socket.on('videoRequest', verifyToken, (videoPath) => {
+        if (userValid) {
+            console.log("Solicitud de video recibida: " + videoPath);
+            const videoStream = fs.createReadStream(videoPath, { highWaterMark: 1024 * 1024 });
 
-        videoStream.on('data', (chunk) => {
-            socket.emit('videoChunk', chunk);
-        });
+            videoStream.on('data', (chunk) => {
+                socket.emit('videoChunk', chunk);
+            });
 
-        videoStream.on('end', () => {
-            socket.emit('videoEnd');
-        });
+            videoStream.on('end', () => {
+                socket.emit('videoEnd');
+            });
 
-        videoStream.on('error', (error) => {
-            console.error("Error al leer el video:", error);
-            socket.emit('videoError', error.message);
-        });
+            videoStream.on('error', (error) => {
+                console.error("Error al leer el video:", error);
+                socket.emit('videoError', error.message);
+            });
+        } else {
+            console.log("Token inválido. Acceso denegado.");
+        }
     });
 
     socket.on('disconnect', () => {
